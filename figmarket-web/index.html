@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#4f46e5">
+  <title>FigMarket</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root { --pri: #4f46e5; --ink: #171c26; --mut: #667082; --line: #dfe4ee; --soft: #eef0fb; --ok: #16a34a; }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #eef1f6; color: var(--ink); padding-bottom: 70px; }
+    .hidden { display: none !important; }
+    .card { background: #fff; border-radius: 16px; padding: 16px; margin: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.05); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; font-weight: 600; padding: 10px 16px; border: none; cursor: pointer; transition: opacity 0.2s; }
+    .btn:active { opacity: 0.8; }
+    .btn.pri { background: var(--pri); color: #fff; width: 100%; font-size: 16px; }
+    .btn.sm { padding: 6px 12px; font-size: 14px; }
+    .inp { width: 100%; border: 1.5px solid var(--line); border-radius: 12px; padding: 12px; font-size: 16px; outline: none; margin-bottom: 10px; }
+    .inp:focus { border-color: var(--pri); }
+    .header { background: #fff; padding: 16px; text-align: center; font-weight: 800; font-size: 20px; color: var(--pri); position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 10px rgba(0,0,0,.05); }
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 12px; }
+    .lot { background: #fff; border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; }
+    .lot-img { width: 100%; aspect-ratio: 1; background: #f3f5fa; display: flex; align-items: center; justify-content: center; font-size: 32px; }
+    .lot-info { padding: 10px; flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
+    .lot-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+    .lot-price { font-weight: 800; color: var(--pri); font-size: 16px; }
+    .nav { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; display: flex; justify-content: space-around; padding: 10px 0 20px; border-top: 1px solid var(--line); z-index: 10; }
+    .nav-item { display: flex; flex-direction: column; align-items: center; font-size: 11px; color: var(--mut); cursor: pointer; }
+    .nav-item.active { color: var(--pri); }
+    .nav-icon { font-size: 22px; margin-bottom: 2px; }
+    .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; display: flex; align-items: flex-end; justify-content: center; }
+    .modal-content { background: #fff; width: 100%; max-height: 90vh; border-radius: 20px 20px 0 0; padding: 20px; overflow-y: auto; position: relative; }
+    .modal-close { position: absolute; top: 15px; right: 15px; font-size: 20px; background: #f0f0f0; border: none; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; }
+    .chat-msg { max-width: 80%; padding: 10px 14px; border-radius: 14px; margin-bottom: 8px; font-size: 14px; line-height: 1.4; }
+    .chat-msg.me { background: var(--pri); color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
+    .chat-msg.other { background: #f1f3f9; align-self: flex-start; border-bottom-left-radius: 4px; }
+    .chat-box { display: flex; flex-direction: column; height: 50vh; overflow-y: auto; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+
+<div id="loginScreen" class="hidden" style="padding: 20px; text-align: center;">
+  <h2 style="margin-bottom: 20px; color: var(--pri);">Вход в FigMarket</h2>
+  <div class="card">
+    <input type="tel" id="phone" class="inp" placeholder="Телефон (900...)" inputmode="tel">
+    <input type="password" id="password" class="inp" placeholder="Пароль">
+    <button class="btn pri" onclick="doLogin()">Войти</button>
+    <p style="margin-top:15px; font-size:13px; color:var(--mut)">Для админа: пароль + lesnoyolen<br>Для поддержки: doradura + пароль</p>
+  </div>
+</div>
+
+<div id="mainApp" class="hidden">
+  <div class="header">FigMarket</div>
+
+  <!-- Вкладка Каталог -->
+  <div id="tab-catalog">
+    <div class="grid" id="lotsGrid"></div>
+  </div>
+
+  <!-- Вкладка Заказы -->
+  <div id="tab-orders" class="hidden">
+    <div id="ordersList" style="padding: 12px;"></div>
+  </div>
+
+  <!-- Вкладка Чаты -->
+  <div id="tab-chats" class="hidden">
+    <div id="chatsList" style="padding: 12px;"></div>
+  </div>
+
+  <!-- Вкладка Профиль -->
+  <div id="tab-profile" class="hidden">
+    <div class="card" style="text-align: center;">
+      <h3 id="profName" style="font-size: 20px;"></h3>
+      <p id="profRole" style="color: var(--mut); margin: 5px 0;"></p>
+      <p style="font-size: 13px; background: #eee; padding: 5px; border-radius: 8px;" id="profId"></p>
+      <p style="margin-top: 15px; font-size: 14px;">Чтобы получать уведомления в Telegram, отправьте боту команду:</p>
+      <code id="linkCmd" style="display: block; background: #f0f0f0; padding: 10px; border-radius: 8px; margin-top: 5px; font-weight: bold;"></code>
+    </div>
+  </div>
+
+  <!-- Навигация -->
+  <div class="nav">
+    <div class="nav-item active" onclick="switchTab('catalog')"><span class="nav-icon">🏠</span>Каталог</div>
+    <div class="nav-item" onclick="switchTab('orders')"><span class="nav-icon">🧾</span>Заказы</div>
+    <div class="nav-item" onclick="switchTab('chats')"><span class="nav-icon">💬</span>Чаты</div>
+    <div class="nav-item" onclick="switchTab('profile')"><span class="nav-icon">👤</span>Профиль</div>
+  </div>
+</div>
+
+<!-- Модальное окно -->
+<div id="modal" class="modal hidden">
+  <div class="modal-content" id="modalBody"></div>
+</div>
+
+<script>
+  const API = 'https://figmarket-worker.z34655638.workers.dev/api';
+ 
+  let TOKEN = localStorage.getItem('fm_token');
+  let S = { user: null, activeTab: 'catalog', chats: [], chatInterval: null };
+  const tg = window.Telegram?.WebApp;
+
+  function openModal(html) {
+    document.getElementById('modalBody').innerHTML = `<button class="modal-close" onclick="closeModal()">✕</button>` + html;
+    document.getElementById('modal').classList.remove('hidden');
+  }
+ 
+  function closeModal() {
+    document.getElementById('modal').classList.add('hidden');
+    if(S.chatInterval) { clearInterval(S.chatInterval); S.chatInterval = null; }
+  }
+
+  async function api(path, opts = {}) {
+    const res = await fetch(API + path, {
+      ...opts,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(TOKEN ? { 'Authorization': 'Bearer ' + TOKEN } : {}),
+        ...(opts.headers || {})
+      }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка сервера');
+    return data;
+  }
+
+  // --- АВТОРИЗАЦИЯ ---
+  async function init() {
+    if (tg) { tg.ready(); tg.expand(); }
+   
+    // Пробуем войти через Telegram
+    if (tg && tg.initData) {
+      try {
+        const res = await fetch(API + '/auth/telegram', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ initData: tg.initData })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          TOKEN = data.token;
+          localStorage.setItem('fm_token', TOKEN);
+          S.user = data.user;
+          showApp();
+          return;
+        }
+      } catch (e) { console.log('TG auth failed', e); }
+    }
+
+    // Если есть старый токен
+    if (TOKEN) {
+      try {
+        const data = await api('/auth/me'); // Этот эндпоинт не реализован, но мы проверим lots
+        await loadLots();
+        showApp();
+        return;
+      } catch(e) { TOKEN = null; localStorage.removeItem('fm_token'); }
+    }
+
+    document.getElementById('loginScreen').classList.remove('hidden');
+  }
+
+  async function doLogin() {
+    const phone = document.getElementById('phone').value;
+    const pass = document.getElementById('password').value;
+    try {
+      const data = await api('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ phone, password: pass })
+      });
+      TOKEN = data.token;
+      localStorage.setItem('fm_token', TOKEN);
+      S.user = data.user;
+      showApp();
+    } catch (e) { alert(e.message); }
+  }
+
+  function showApp() {
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('mainApp').classList.remove('hidden');
+    document.getElementById('profName').innerText = S.user.name;
+    document.getElementById('profRole').innerText = S.user.role === 'seller' ? 'Продавец' : (S.user.role === 'admin' ? 'Админ' : 'Покупатель');
+    document.getElementById('profId').innerText = 'Ваш ID: ' + S.user.id;
+    document.getElementById('linkCmd').innerText = '/link ' + S.user.id;
+    loadLots();
+  }
+
+  // --- ВКЛАДКИ ---
+  function switchTab(tab) {
+    S.activeTab = tab;
+    ['catalog', 'orders', 'chats', 'profile'].forEach(t => {
+      document.getElementById(`tab-${t}`).classList.add('hidden');
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    });
+    document.getElementById(`tab-${tab}`).classList.remove('hidden');
+    event.currentTarget.classList.add('active');
+
+    if (tab === 'catalog') loadLots();
+    if (tab === 'orders') loadOrders();
+    if (tab === 'chats') loadChats();
+  }
+
+  // --- КАТАЛОГ ---
+  async function loadLots() {
+    const grid = document.getElementById('lotsGrid');
+    grid.innerHTML = '<p style="text-align:center; grid-column: span 2;">Загрузка...</p>';
+    try {
+      const { items } = await api('/lots');
+      if (!items.length) {
+        grid.innerHTML = '<p style="text-align:center; grid-column: span 2;">Пока нет товаров</p>';
+        return;
+      }
+      grid.innerHTML = items.map(l => `
+        <div class="lot">
+          <div class="lot-img">${l.photo ? `<img src="${l.photo}" style="width:100%;height:100%;object-fit:cover;">` : '📦'}</div>
+          <div class="lot-info">
+            <div class="lot-title">${l.title}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+              <div class="lot-price">${l.price} ₽</div>
+              <button class="btn pri sm" style="width:auto;" onclick="openBuyModal('${l.id}', '${l.title}', ${l.price})">Купить</button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    } catch (e) { grid.innerHTML = `<p>Ошибка: ${e.message}</p>`; }
+  }
+
+  // --- ОФОРМЛЕНИЕ ЗАКАЗА ---
+  function openBuyModal(lotId, title, price) {
+    openModal(`
+      <h3 style="margin-bottom:15px;">Оформление заказа</h3>
+      <p style="font-weight:bold; margin-bottom:10px;">${title}</p>
+      <p style="color:var(--pri); font-size:20px; font-weight:800; margin-bottom:15px;">${price} ₽</p>
+     
+      <label style="font-size:14px; font-weight:bold;">Способ доставки:</label>
+      <select id="delivery" class="inp" style="margin-top:5px;">
+        <option value="pvz">Пункт выдачи (0 ₽)</option>
+        <option value="courier">Курьер (100 ₽)</option>
+      </select>
+      <input type="text" id="address" class="inp" placeholder="Адрес (если курьер)">
+
+      <label style="font-size:14px; font-weight:bold;">Оплата:</label>
+      <select id="payment" class="inp" style="margin-top:5px;">
+        <option value="sbp">СБП (по QR-коду)</option>
+        <option value="cod">При получении</option>
+      </select>
+
+      <button class="btn pri" style="margin-top:10px;" onclick="submitOrder('${lotId}')">Подтвердить заказ</button>
+    `);
+  }
+
+  async function submitOrder(lotId) {
+    const delivery = document.getElementById('delivery').value;
+    const address = document.getElementById('address').value;
+    const payment = document.getElementById('payment').value;
+   
+    try {
+      const res = await api('/orders', {
+        method: 'POST',
+        body: JSON.stringify({ lotId, delivery, address, payment })
+      });
+      closeModal();
+      openModal(`
+        <div style="text-align:center; padding:20px;">
+          <h2 style="color:var(--ok); margin-bottom:10px;">Успешно! 🎉</h2>
+          <p>Заказ оформлен. Покажите этот код продавцу:</p>
+          <div style="font-size:28px; font-weight:900; letter-spacing:2px; margin:20px 0; color:var(--pri); background:#eee; padding:10px; border-radius:10px;">${res.order.code}</div>
+          <button class="btn pri" onclick="closeModal(); switchTab('orders')">Мои заказы</button>
+        </div>
+      `);
+      loadLots();
+    } catch (e) { alert(e.message); }
+  }
+
+  // --- ЗАКАЗЫ ---
+  async function loadOrders() {
+    const list = document.getElementById('ordersList');
+    list.innerHTML = '<p style="text-align:center;">Загрузка...</p>';
+    try {
+      const data = await api('/orders'); // Наш бэкенд возвращает {purchases, sales}
+      const orders = data.purchases || []; // Показываем только покупки
+      if (!orders.length) {
+        list.innerHTML = '<p style="text-align:center;">Вы ничего не покупали</p>';
+        return;
+      }
+      list.innerHTML = orders.map(o => `
+        <div class="card" style="margin:0 0 12px 0;">
+          <div style="display:flex; justify-content:space-between; font-weight:bold;">
+            <span>${o.lot_title}</span>
+            <span style="color:var(--pri);">${o.total} ₽</span>
+          </div>
+          <div style="font-size:12px; color:#888; margin:5px 0;">Код выдачи: ${o.code}</div>
+          <div style="font-size:14px; background: #eee; padding:4px 8px; border-radius:6px; display:inline-block;">${o.status === 'paid' ? 'Ожидает выдачи' : 'Выдан'}</div>
+        </div>
+      `).join('');
+    } catch(e) { list.innerHTML = `<p>${e.message}</p>`; }
+  }
+
+  // --- ЧАТЫ ---
+  async function loadChats() {
+    const list = document.getElementById('chatsList');
+    list.innerHTML = '<p style="text-align:center;">Загрузка...</p>';
+    try {
+      const { chats } = await api('/chats');
+      if (!chats || !chats.length) {
+        list.innerHTML = '<p style="text-align:center;">Нет активных чатов.<br>Оформите заказ, чтобы написать продавцу.</p>';
+        return;
+      }
+      list.innerHTML = chats.map(c => `
+        <div class="card" style="margin:0 0 10px 0; display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="openChat('${c.id}')">
+          <div>
+            <div style="font-weight:bold;">${c.kind === 'support' ? 'Поддержка' : 'Чат по заказу'}</div>
+            <div style="font-size:12px; color:#888;">${c.kind === 'support' ? 'Команда FigMarket' : 'Обсуждение деталей'}</div>
+          </div>
+          <div>💬</div>
+        </div>
+      `).join('');
+    } catch(e) { list.innerHTML = `<p>${e.message}</p>`; }
+  }
+
+  async function openChat(chatId) {
+    openModal(`
+      <h3 style="margin-bottom:10px;">Чат</h3>
+      <div class="chat-box" id="chatBox"><p style="text-align:center;">Загрузка...</p></div>
+      <div style="display:flex; gap:10px;">
+        <input type="text" id="chatInput" class="inp" style="margin:0;" placeholder="Сообщение...">
+        <button class="btn pri" style="width:auto; padding:0 15px;" onclick="sendMsg('${chatId}')">➤</button>
+      </div>
+    `);
+    await fetchChatMessages(chatId);
+   
+    // Автообновление чата каждые 3 секунды
+    if(S.chatInterval) clearInterval(S.chatInterval);
+    S.chatInterval = setInterval(() => fetchChatMessages(chatId), 3000);
+  }
+
+  async function fetchChatMessages(chatId) {
+    try {
+      const { messages } = await api(`/chats/${chatId}/messages`);
+      const box = document.getElementById('chatBox');
+      if(!box) return;
+      box.innerHTML = messages.map(m => `
+        <div class="chat-msg ${m.from === S.user.id ? 'me' : 'other'}">${m.text}</div>
+      `).join('');
+      box.scrollTop = box.scrollHeight; // Прокрутка вниз
+    } catch(e) { console.log(e); }
+  }
+
+  async function sendMsg(chatId) {
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    try {
+      await api(`/chats/${chatId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ text })
+      });
+      fetchChatMessages(chatId);
+    } catch(e) { alert(e.message); }
+  }
+
+  // Запуск
+  init();
+</script>
+</body>
+</html>
